@@ -1,0 +1,40 @@
+# Core libraries
+pandas
+numpy
+scikit-learn
+scipy
+
+# Visualization (for EDA)
+matplotlib
+seaborn
+plotly
+
+# Feature engineering
+xverse
+woe
+category_encoders
+
+# Modeling
+xgboost
+lightgbm
+
+# MLOps and tracking
+mlflow
+
+# Web API
+fastapi
+uvicorn[standard]
+pydantic
+
+# Dev tools
+flake8
+black
+
+# Testing
+pytest
+
+# Notebook support
+jupyter
+
+# Optional - if using yaml configs
+pyyaml
