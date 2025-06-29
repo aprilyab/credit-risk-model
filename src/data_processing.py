@@ -87,7 +87,10 @@ for column in numerical_columns.columns:
 standaizer=StandardScaler()
 for column in numerical_columns.columns:
     df[column]=standaizer.fit_transform(df[[column]])
-print(df.head())
+
+
+# save the new processed data 
+df.to_csv(r"C:\Users\user\Desktop\credit-risk-model\data\processed\FE_cleaned_data.csv",index=False)
 
 
 
