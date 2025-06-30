@@ -23,3 +23,8 @@ def test_create_aggregate_features():
     assert 'Total_Transaction_Amount' in df_agg.columns
     assert df_agg[df_agg['CustomerId'] == 1]['Total_Transaction_Amount'].values[0] == 300
     assert df_agg[df_agg['CustomerId'] == 2]['avg_transaction_amount'].values[0] == 300
+
+# Optional: Keep this simple sanity test if you want
+def test_sample_math():
+    assert 2 + 2 == 4
+
