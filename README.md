@@ -179,13 +179,11 @@ This project provides a foundation for delivering ethical, explainable, and acti
 ##  Authors
 
 * Henok Yoseph 
-
-
 ---
 
 ##  Contact
 
 For inquiries or suggestions ,please email: henokapril@gmail.com 
-github : https://github.com/aprilyab/credit-risk-model 
+github : https://github.com/aprilyab 
 
 ---

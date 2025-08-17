@@ -1,0 +1,22 @@
+import joblib
+import pandas as pd
+
+# Path to your processed training data
+DATA_PATH = r"C:\Users\user\Desktop\tasks\credit-risk-model\data\processed\processed_data.csv"
+TARGET_COL = "is_high_risk"
+ID_COL = "CustomerId"
+
+# Load training data
+df = pd.read_csv(DATA_PATH)
+X = df.drop([ID_COL, TARGET_COL], axis=1)
+
+# Path to your trained model
+model_path = r"C:\Users\user\Desktop\tasks\credit-risk-model\models\best_model.pkl"
+model = joblib.load(model_path)  # Load your trained model
+
+# Save feature names for prediction
+feature_names = X.columns.tolist()
+joblib.dump(feature_names, r"C:\Users\user\Desktop\tasks\credit-risk-model\models\feature_names.pkl")
+
+print(f"✅ Model loaded from {model_path}")
+print(f"✅ Feature names saved to models/feature_names.pkl")

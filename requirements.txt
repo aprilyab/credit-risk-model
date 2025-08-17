@@ -1,7 +1,7 @@
 # Core libraries
 pandas
 numpy
-scikit-learn
+scikit-learn==1.6.1
 scipy
 
 # Visualization (for EDA)
@@ -20,21 +20,21 @@ lightgbm
 
 # MLOps and tracking
 mlflow
+imbalanced-learn
 
 # Web API
 fastapi
 uvicorn[standard]
 pydantic
 
-# Dev tools
-flake8
-black
-
-# Testing
-pytest
 
 # Notebook support
 jupyter
 
-# Optional - if using yaml configs
+
 pyyaml
+
+streamlit>=1.25
+shap>=0.45        
+joblib
+

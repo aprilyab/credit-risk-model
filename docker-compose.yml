@@ -1,12 +1,27 @@
-
-version: "3.8"
-
 services:
-  api:
+  fastapi_app:
     build: .
-    ports:
-      - "8000:8000"
+    container_name: fastapi_app
     volumes:
       - .:/app
+    ports:
+      - "8000:8000"
     environment:
-      - MLFLOW_TRACKING_URI=file:///C:/Users/user/Desktop/credit-risk-model/notebooks/mlruns
+      - MODEL_PATH=models/best_model.pkl
+    depends_on:
+      - postgres_db
+
+  postgres_db:
+    image: postgres:15
+    container_name: postgres_db
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: credit_risk
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
