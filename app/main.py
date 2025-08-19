@@ -1,13 +1,13 @@
 import pickle
+from joblib import load
 import os
 from fastapi import FastAPI
 from app.pydantic_models import PredictRequest, PredictResponse
 
-MODEL_PATH = os.getenv("MODEL_PATH", "models/best_model.pkl")
+MODEL_PATH = os.getenv("MODEL_PATH", "models/best_model.joblib")
 
-# Load model once at startup
-with open(MODEL_PATH, "rb") as f:
-    model = pickle.load(f)
+# Load model once at startu
+model = load(MODEL_PATH)
 
 app = FastAPI(title="Credit Risk Model API")
 

@@ -1,23 +1,8 @@
 """
-Streamlit Dashboard for Credit Risk Proxy Project
--------------------------------------------------
-File: app.py
-Run: streamlit run app.py
-
-Features:
-- Upload raw transactions CSV (Xente-like) or use example/sample data
-- Compute RFM (Recency, Frequency, Monetary) per customer
-- Label high-risk customers using KMeans clustering
-- Display cluster summary, RFM distributions, and a PCA scatter plot
-- Optional: Run trained model predictions on aggregated users
-- Optional: Show PD histogram and top feature importances (model-dependent)
-- Optional: SHAP explainability for model predictions
-- Single-customer prediction form with suggested loan terms
-
-Notes:
-- Expects a datetime column named 'TransactionStartTime'
-- Expects a monetary column: either 'Value' or 'Amount'
-- Place trained model at 'models/best_model.joblib' to enable predictions
+Credit Risk Proxy Dashboard
+---------------------------
+Run with:
+    streamlit run app.py
 """
 
 # ----------------- Imports -----------------
@@ -29,6 +14,7 @@ from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
+import seaborn as sns
 import os
 
 # Optional SHAP import
@@ -39,127 +25,98 @@ except Exception:
     HAS_SHAP = False
 
 # ----------------- Constants -----------------
-MODEL_PATH = "models/best_model.joblib"
+MODEL_PATH = "models/best_model.pkl"
 
-# ----------------- Streamlit Page Config -----------------
+# ----------------- Streamlit Config -----------------
 st.set_page_config(page_title="Credit Risk Dashboard", layout="wide")
-st.title("Credit Risk — RFM Proxy & Dashboard")
+st.title("📊 Credit Risk — RFM Proxy & Dashboard")
+
 st.markdown(
-    "Demo dashboard: compute RFM, cluster customers, label high-risk proxy, "
-    "and optionally run model predictions and SHAP explainability."
+    """
+    This dashboard helps analyze customer credit risk using:
+    - **RFM Analysis** (Recency, Frequency, Monetary)
+    - **KMeans clustering** to segment customers
+    - **Optional ML model predictions** if a trained model is provided
+    - **Credit score conversion** and **SHAP explainability**
+    """
 )
 
 # ----------------- Utility Functions -----------------
 @st.cache_data
 def load_csv(uploaded_file) -> pd.DataFrame:
-    """Load CSV file with fallback encoding for special characters."""
     try:
         return pd.read_csv(uploaded_file)
     except Exception:
         uploaded_file.seek(0)
-        return pd.read_csv(uploaded_file, encoding='latin1')
-
+        return pd.read_csv(uploaded_file, encoding="latin1")
 
 @st.cache_data
-def compute_rfm(df: pd.DataFrame, id_col='CustomerId', date_col='TransactionStartTime',
-                amount_cols=('Value','Amount')) -> pd.DataFrame:
-    """
-    Compute RFM metrics for each customer.
-    Returns a DataFrame with Recency, Frequency, and Monetary.
-    """
+def compute_rfm(df: pd.DataFrame, id_col="CustomerId", date_col="TransactionStartTime",
+                amount_cols=("Value", "Amount")) -> pd.DataFrame:
     d = df.copy()
-
-    # Identify the monetary column
+    # Amount column
     amount_col = next((c for c in amount_cols if c in d.columns), None)
     if amount_col is None:
         raise ValueError(f"No amount column found among {amount_cols}")
 
-    # Parse datetime column
-    d[date_col] = pd.to_datetime(d[date_col], errors='coerce')
-    if d[date_col].isna().all():
-        raise ValueError(f"All values in {date_col} could not be parsed as datetime")
-
+    # Parse datetime
+    d[date_col] = pd.to_datetime(d[date_col], errors="coerce")
     snapshot = d[date_col].max() + pd.Timedelta(days=1)
-    d['monetary_abs'] = d[amount_col].abs()
+    d["monetary_abs"] = d[amount_col].abs()
 
-    # Aggregate RFM per customer
+    # RFM
     grp = d.groupby(id_col).agg(
         Recency=(date_col, lambda s: (snapshot - s.max()).days),
-        Frequency=('TransactionId', 'nunique') if 'TransactionId' in d.columns else (date_col, 'count'),
-        Monetary=('monetary_abs', 'sum')
+        Frequency=("TransactionId", "nunique") if "TransactionId" in d.columns else (date_col, "count"),
+        Monetary=("monetary_abs", "sum")
     ).reset_index()
-
     return grp
 
-
 @st.cache_data
-def label_high_risk_by_rfm(rfm_df: pd.DataFrame, random_state: int=42):
-    """
-    Cluster customers using KMeans and label the highest-risk cluster.
-    Returns labeled RFM DataFrame and KMeans model.
-    """
-    feats = ['Recency','Frequency','Monetary']
+def label_high_risk_by_rfm(rfm_df: pd.DataFrame, random_state: int = 42):
+    feats = ["Recency", "Frequency", "Monetary"]
     r = rfm_df.copy()
     r[feats] = r[feats].fillna(0.0)
 
-    # Standardize features and cluster
+    # Standardize & cluster
     Z = StandardScaler().fit_transform(r[feats])
-    km = KMeans(n_clusters=3, random_state=random_state, n_init='auto')
+    km = KMeans(n_clusters=3, random_state=random_state, n_init=10)
     clusters = km.fit_predict(Z)
-    r['cluster'] = clusters
+    r["cluster"] = clusters
 
-    # Determine high-risk cluster by ranking
-    clust_stats = r.groupby('cluster')[feats].mean()
+    # Find high-risk cluster
+    clust_stats = r.groupby("cluster")[feats].mean()
     score = (
-        clust_stats['Recency'].rank(ascending=False) +
-        clust_stats['Frequency'].rank(ascending=True) +
-        clust_stats['Monetary'].rank(ascending=True)
+        clust_stats["Recency"].rank(ascending=False) +
+        clust_stats["Frequency"].rank(ascending=True) +
+        clust_stats["Monetary"].rank(ascending=True)
     )
     high_risk_cluster = score.idxmax()
-    r['is_high_risk'] = (r['cluster'] == high_risk_cluster).astype(int)
+    r["is_high_risk"] = (r["cluster"] == high_risk_cluster).astype(int)
 
     return r, km
 
-
 @st.cache_data
-def aggregate_features_from_transactions(df: pd.DataFrame, id_col='CustomerId',
-                                         date_col='TransactionStartTime') -> pd.DataFrame:
-    """
-    Aggregate transaction-level features to customer-level for model input.
-    """
+def aggregate_features_from_transactions(df: pd.DataFrame, id_col="CustomerId",
+                                         date_col="TransactionStartTime") -> pd.DataFrame:
     d = df.copy()
-    amount_col = 'Value' if 'Value' in d.columns else ('Amount' if 'Amount' in d.columns else None)
-    if amount_col is None:
-        raise ValueError("No Amount/Value column found.")
+    amount_col = "Value" if "Value" in d.columns else ("Amount" if "Amount" in d.columns else None)
+    d[date_col] = pd.to_datetime(d[date_col], errors="coerce")
+    d["abs_amount"] = d[amount_col].abs()
 
-    d[date_col] = pd.to_datetime(d[date_col], errors='coerce')
-    d['abs_amount'] = d[amount_col].abs()
-
-    # Aggregation
     agg = d.groupby(id_col).agg(
-        total_amount=('abs_amount', 'sum'),
-        avg_amount=('abs_amount', 'mean'),
-        std_amount=('abs_amount', 'std'),
-        txn_count=('TransactionId','nunique') if 'TransactionId' in d.columns else (date_col,'count'),
-        provider_count=('ProviderId','nunique') if 'ProviderId' in d.columns else ('CustomerId','nunique'),
-        product_count=('ProductId','nunique') if 'ProductId' in d.columns else ('CustomerId','nunique'),
-        category_count=('ProductCategory','nunique') if 'ProductCategory' in d.columns else ('CustomerId','nunique'),
-        channel_count=('ChannelId','nunique') if 'ChannelId' in d.columns else ('CustomerId','nunique'),
-        fraud_rate=('FraudResult', 'mean') if 'FraudResult' in d.columns else (date_col, lambda s: 0.0)
+        total_amount=("abs_amount", "sum"),
+        avg_amount=("abs_amount", "mean"),
+        txn_count=("TransactionId","nunique") if "TransactionId" in d.columns else (date_col,"count"),
+        provider_count=("ProviderId","nunique") if "ProviderId" in d.columns else ("CustomerId","nunique"),
+        product_count=("ProductId","nunique") if "ProductId" in d.columns else ("CustomerId","nunique"),
+        channel_count=("ChannelId","nunique") if "ChannelId" in d.columns else ("CustomerId","nunique"),
+        fraud_rate=("FraudResult", "mean") if "FraudResult" in d.columns else (date_col, lambda s: 0.0)
     ).reset_index()
-
-    # Hour features
-    if date_col in d.columns:
-        d['hour'] = d[date_col].dt.hour
-        hr = d.groupby(id_col)['hour'].agg(['mean','std']).reset_index().rename(columns={'mean':'hour_mean','std':'hour_std'})
-        agg = agg.merge(hr, left_on=id_col, right_on=id_col, how='left')
-
     return agg
-
 
 @st.cache_resource
 def load_model(path=MODEL_PATH):
-    """Load trained model from file if available."""
     if os.path.exists(path):
         try:
             return joblib.load(path)
@@ -168,10 +125,8 @@ def load_model(path=MODEL_PATH):
             return None
     return None
 
-
-# ----------------- Scorecard Class -----------------
+# ----------------- Scorecard -----------------
 class Scorecard:
-    """Simple credit score conversion based on PD."""
     def __init__(self, base_score=600.0, p_at_base=0.5, pdo=50.0):
         self.base_score = base_score
         self.odds0 = p_at_base / (1 - p_at_base)
@@ -182,64 +137,94 @@ class Scorecard:
         odds = (1 - p) / p
         return float(self.base_score + self.factor * np.log(odds / self.odds0))
 
-
 scorecard = Scorecard()
 
 # ----------------- Sidebar -----------------
-st.sidebar.header("Controls & Inputs")
-upload = st.sidebar.file_uploader("Upload transactions CSV", type=['csv'])
-use_sample = st.sidebar.checkbox("Use sample demo data (small)")
+st.sidebar.header("⚙️ Controls")
+upload = st.sidebar.file_uploader("Upload transactions CSV", type=["csv"])
+use_sample = st.sidebar.checkbox("Use sample demo data (1000 rows)")
 run_clustering = st.sidebar.button("Compute RFM & Cluster")
 show_model_section = st.sidebar.checkbox("Enable model predictions")
 
-# ----------------- Main Page -----------------
-col1, col2 = st.columns([2,1])
+# ----------------- Data Handling -----------------
+if upload is not None:
+    raw_df = load_csv(upload)
+    st.success(f"✅ Loaded {raw_df.shape[0]:,} rows and {raw_df.shape[1]} columns")
+elif use_sample:
+    rng = np.random.default_rng(42)
+    n = 1000
+    raw_df = pd.DataFrame({
+        "TransactionId": np.arange(n),
+        "CustomerId": rng.choice([f"C{i}" for i in range(1,200)], size=n),
+        "TransactionStartTime": pd.date_range("2024-01-01", periods=n, freq="h"),
+        "Value": rng.normal(100, 50, size=n),
+        "ProviderId": rng.integers(1,6,n),
+        "ProductId": rng.integers(1,20,n),
+        "ProductCategory": rng.integers(1,8,n),
+        "ChannelId": rng.choice(["web","ios","android"], size=n),
+        "FraudResult": rng.choice([0,0,0,1], size=n)
+    })
+    st.info("ℹ️ Using synthetic demo dataset")
+else:
+    st.warning("Upload a dataset or select 'Use sample demo data'")
+    raw_df = None
 
-# Left column: Data upload and display
-with col1:
-    if upload is not None:
-        raw_df = load_csv(upload)
-        st.success(f"Loaded {raw_df.shape[0]:,} rows and {raw_df.shape[1]} columns")
-        if st.checkbox("Show raw sample (first 5 rows)"):
-            st.dataframe(raw_df.head())
-    elif use_sample:
-        # Generate synthetic demo data
-        n = 1000
-        rng = np.random.default_rng(42)
-        custs = [f"C{int(x)}" for x in rng.integers(1, 200, size=n)]
-        times = pd.date_range('2025-01-01', periods=n, freq='H')
-        amounts = rng.normal(100, 50, size=n)
-        raw_df = pd.DataFrame({
-            'TransactionId': np.arange(n),
-            'CustomerId': custs,
-            'TransactionStartTime': times,
-            'Value': amounts,
-            'ProviderId': rng.integers(1,6,n),
-            'ProductId': rng.integers(1,20,n),
-            'ProductCategory': rng.integers(1,8,n),
-            'ChannelId': rng.choice(['web','ios','android'], size=n),
-            'FraudResult': rng.choice([0,0,0,1], size=n)
-        })
-        st.info("Using generated demo dataset")
-        if st.checkbox("Show demo sample (first 5 rows)"):
-            st.dataframe(raw_df.head())
+# ----------------- Main Analysis -----------------
+if raw_df is not None and run_clustering:
+    st.subheader("📌 RFM Analysis & Clustering")
+    rfm_df = compute_rfm(raw_df)
+    rfm_labeled, km_model = label_high_risk_by_rfm(rfm_df)
+
+    st.dataframe(rfm_labeled.head())
+
+    # Cluster distributions
+    st.markdown("### Cluster Summary")
+    st.dataframe(rfm_labeled.groupby("cluster")[["Recency","Frequency","Monetary"]].mean())
+
+    # PCA plot
+    feats = ["Recency","Frequency","Monetary"]
+    Z = StandardScaler().fit_transform(rfm_labeled[feats])
+    pca = PCA(n_components=2)
+    pc = pca.fit_transform(Z)
+    fig, ax = plt.subplots()
+    sns.scatterplot(x=pc[:,0], y=pc[:,1], hue=rfm_labeled["cluster"], palette="Set2", ax=ax)
+    st.pyplot(fig)
+
+# ----------------- Model Predictions -----------------
+if raw_df is not None and show_model_section:
+    st.subheader("🤖 Model Predictions")
+    model = load_model()
+    if model is None:
+        st.error("No model found at models/best_model.pkl")
     else:
-        st.info("Upload a dataset or select 'Use sample demo data'.")
-        raw_df = None
+        agg = aggregate_features_from_transactions(raw_df)
+        if hasattr(model, "predict_proba"):
+            agg["PD"] = model.predict_proba(agg.drop(columns=["CustomerId"]))[:,1]
+            agg["Score"] = agg["PD"].apply(scorecard.prob_to_score)
+            st.dataframe(agg.head())
 
-# Right column: Model status
-with col2:
-    st.markdown("### Model status")
-    model = None
-    if show_model_section:
-        model = load_model()
-        if model:
-            st.success(f"Model loaded from {MODEL_PATH}")
-            st.markdown("Predicts probabilities: available" if hasattr(model, 'predict_proba') else
-                        "Model does not support predict_proba — probability mode unavailable")
+            # PD Histogram
+            fig, ax = plt.subplots()
+            sns.histplot(agg["PD"], bins=20, kde=True, ax=ax)
+            st.pyplot(fig)
         else:
-            st.warning(f"No model found at {MODEL_PATH}")
-    else:
-        st.write("Model predictions disabled")
+            st.warning("⚠️ Model does not support predict_proba")
 
-# -----------------
+        # SHAP Explainability
+        if HAS_SHAP and hasattr(model, "predict_proba"):
+            explainer = shap.Explainer(model, agg.drop(columns=["CustomerId","PD","Score"]))
+            shap_values = explainer(agg.drop(columns=["CustomerId","PD","Score"]))
+            st.subheader("🔎 SHAP Explainability")
+            st.pyplot(shap.plots.beeswarm(shap_values, show=False))
+
+# ----------------- Single-Customer Prediction -----------------
+if raw_df is not None and show_model_section:
+    st.sidebar.subheader("🔮 Single Customer Prediction")
+    cust_id = st.sidebar.selectbox("Choose Customer ID", raw_df["CustomerId"].unique())
+    if st.sidebar.button("Predict Customer Risk"):
+        agg = aggregate_features_from_transactions(raw_df)
+        row = agg[agg["CustomerId"] == cust_id]
+        if not row.empty and model is not None and hasattr(model, "predict_proba"):
+            pd_prob = model.predict_proba(row.drop(columns=["CustomerId"]))[:,1][0]
+            score = scorecard.prob_to_score(pd_prob)
+            st.success(f"Customer {cust_id} → PD={pd_prob:.2%}, Score={score:.0f}")

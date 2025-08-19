@@ -6,3 +6,7 @@ class PredictRequest(BaseModel):
 
 class PredictResponse(BaseModel):
     risk_probability: float
+
+
+
+
